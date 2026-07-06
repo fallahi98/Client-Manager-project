@@ -13,10 +13,6 @@ from flask_cors import CORS
 import psycopg2
 import requests
 from psycopg2 import OperationalError
-try:
-    from twilio.rest import Client as TwilioClient
-except ImportError:
-    TwilioClient = None
 
 
 CLIENT_DIST_DIR = Path(__file__).resolve().parent.parent / "Client" / "dist"
@@ -241,26 +237,6 @@ def ensure_reminders_table(cursor):
     )
 
 
-def ensure_sms_messages_table(cursor):
-    ensure_cases_table(cursor)
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sms_messages (
-            id SERIAL PRIMARY KEY,
-            client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            case_id INT REFERENCES cases(id) ON DELETE CASCADE,
-            phone_number VARCHAR(30) NOT NULL,
-            message TEXT NOT NULL,
-            status VARCHAR(50) NOT NULL,
-            provider_message_id VARCHAR(255),
-            error_message VARCHAR(1000),
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            sent_at TIMESTAMP
-        );
-        """
-    )
-
-
 def error_response(message, status_code=500):
     return jsonify({"error": message}), status_code
 
@@ -375,82 +351,6 @@ def deliver_email_message(email_message, smtp_host, smtp_port, smtp_username, sm
         smtp_use_tls,
     )
     return "smtp:sent"
-
-
-def normalize_sms_phone_number(phone_number):
-    digits = "".join(character for character in str(phone_number) if character.isdigit())
-
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]
-
-    if len(digits) != 10:
-        raise RuntimeError("Client phone number must be a 10 digit US number for email-to-SMS")
-
-    return digits
-
-
-def normalize_e164_us_phone_number(phone_number):
-    digits = normalize_sms_phone_number(phone_number)
-    return f"+1{digits}"
-
-
-def send_twilio_sms_message(to_phone_number, message):
-    if TwilioClient is None:
-        return None
-
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    from_phone_number = os.getenv("TWILIO_FROM_PHONE")
-
-    if not all([account_sid, auth_token, from_phone_number]):
-        return None
-
-    twilio_client = TwilioClient(account_sid, auth_token)
-    twilio_message = twilio_client.messages.create(
-        body=message,
-        from_=from_phone_number,
-        to=normalize_e164_us_phone_number(to_phone_number),
-    )
-
-    return f"twilio:{twilio_message.sid}; status:{twilio_message.status}"
-
-
-def send_sms_message(to_phone_number, message):
-    twilio_provider_id = send_twilio_sms_message(to_phone_number, message)
-    if twilio_provider_id:
-        return twilio_provider_id
-
-    gateway_domain = os.getenv("SMS_GATEWAY_DOMAIN", "vtext.com").strip()
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-
-    if not gateway_domain:
-        raise RuntimeError("SMS_GATEWAY_DOMAIN is missing. Use vtext.com for Verizon SMS.")
-
-    if not all([smtp_host, smtp_username, smtp_password]):
-        raise RuntimeError("SMTP settings are missing. SMS gateway sending uses your email account.")
-
-    sms_email_address = f"{normalize_sms_phone_number(to_phone_number)}@{gateway_domain}"
-
-    sms_email = EmailMessage()
-    sms_email["From"] = smtp_username
-    sms_email["To"] = sms_email_address
-    sms_email["Reply-To"] = smtp_username
-    sms_email.set_content(message[:1400])
-
-    provider_id = deliver_smtp_message(
-        sms_email,
-        smtp_host,
-        smtp_port,
-        smtp_username,
-        smtp_password,
-        smtp_use_tls,
-    )
-
-    return f"email-to-sms:{sms_email_address}; provider:{provider_id}"
 
 
 def send_email_to_admin(subject, body):
@@ -849,29 +749,6 @@ def smtp_diagnostics():
         return error_response(str(error), 500)
 
 
-@app.route("/diagnostics/sms-gateway", methods=["GET"])
-def sms_gateway_diagnostics():
-    phone_number = request.args.get("phone", "").strip()
-    if not phone_number:
-        return error_response("Add ?phone=YOUR10DIGITNUMBER to test SMS gateway delivery", 400)
-
-    try:
-        provider_message_id = send_sms_message(
-            phone_number,
-            "Client Manager SMS gateway diagnostic test.",
-        )
-        return jsonify(
-            {
-                "status": "ok",
-                "message": "SMS gateway email accepted by provider",
-                "provider_message_id": provider_message_id,
-            }
-        )
-    except Exception as error:
-        app.logger.exception("SMS gateway diagnostic failed")
-        return error_response(str(error), 500)
-
-
 @app.route("/clients", methods=["GET"])
 def get_clients():
     try:
@@ -1188,10 +1065,8 @@ def delete_case(case_id):
                 return error_response("Case not found", 404)
 
             ensure_reminders_table(cursor)
-            ensure_sms_messages_table(cursor)
             cursor.execute("DELETE FROM reminders WHERE case_id = %s", (case_id,))
             cursor.execute("DELETE FROM admin_notes WHERE case_id = %s", (case_id,))
-            cursor.execute("DELETE FROM sms_messages WHERE case_id = %s", (case_id,))
             cursor.execute("DELETE FROM cases WHERE id = %s", (case_id,))
             conn.commit()
 
@@ -1367,133 +1242,6 @@ def schedule_case_email(case_id):
     except Exception:
         app.logger.exception("Failed to schedule case email")
         return error_response("Failed to schedule case email", 500)
-
-
-@app.route("/cases/<int:case_id>/sms", methods=["POST"])
-def send_case_sms(case_id):
-    data = request.get_json(silent=True) or {}
-    message = str(data.get("message", "")).strip()
-
-    if not message:
-        return error_response("SMS message is required", 400)
-
-    try:
-        with closing(get_db()) as conn:
-            cursor = conn.cursor()
-            ensure_sms_messages_table(cursor)
-
-            case = row_to_case_from_db(cursor, case_id)
-            if not case:
-                return error_response("Case not found", 404)
-
-            client = row_to_client_from_db(cursor, case["client_id"])
-            if not client:
-                return error_response("Client not found", 404)
-
-            phone_number = str(client.get("phone_number") or "").strip()
-            if not phone_number:
-                return error_response("Client phone number is missing", 400)
-
-            status = "Sent"
-            provider_message_id = None
-            error_message = None
-            sent_at_sql = "CURRENT_TIMESTAMP"
-
-            try:
-                provider_message_id = send_sms_message(phone_number, message)
-            except Exception as error:
-                status = "Failed"
-                error_message = str(error)[:1000]
-                sent_at_sql = "NULL"
-
-            cursor.execute(
-                f"""
-                INSERT INTO sms_messages (
-                    client_id,
-                    case_id,
-                    phone_number,
-                    message,
-                    status,
-                    provider_message_id,
-                    error_message,
-                    sent_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, {sent_at_sql})
-                RETURNING id, client_id, case_id, phone_number, message, status,
-                    provider_message_id, error_message, created_at, sent_at
-                """,
-                (client["id"], case_id, phone_number, message, status, provider_message_id, error_message),
-            )
-            row = cursor.fetchone()
-            conn.commit()
-
-        sms = {
-            "id": row[0],
-            "client_id": row[1],
-            "case_id": row[2],
-            "phone_number": row[3],
-            "message": row[4],
-            "status": row[5],
-            "provider_message_id": row[6],
-            "error_message": row[7],
-            "created_at": str(row[8]) if row[8] else None,
-            "sent_at": str(row[9]) if row[9] else None,
-        }
-
-        if status == "Failed":
-            return jsonify({"error": error_message, "sms": sms}), 502
-
-        return jsonify({"message": "SMS sent successfully", "sms": sms}), 201
-    except RuntimeError as error:
-        return error_response(str(error), 500)
-    except Exception as error:
-        app.logger.exception("Failed to send SMS")
-        return error_response(f"Failed to send SMS: {error}", 500)
-
-
-@app.route("/cases/<int:case_id>/sms-history", methods=["GET"])
-def get_case_sms_history(case_id):
-    try:
-        with closing(get_db()) as conn:
-            cursor = conn.cursor()
-            ensure_sms_messages_table(cursor)
-
-            case = row_to_case_from_db(cursor, case_id)
-            if not case:
-                return error_response("Case not found", 404)
-
-            cursor.execute(
-                """
-                SELECT id, client_id, case_id, phone_number, message, status,
-                    provider_message_id, error_message, created_at, sent_at
-                FROM sms_messages
-                WHERE case_id = %s
-                ORDER BY created_at DESC, id DESC
-                """,
-                (case_id,),
-            )
-            messages = [
-                {
-                    "id": row[0],
-                    "client_id": row[1],
-                    "case_id": row[2],
-                    "phone_number": row[3],
-                    "message": row[4],
-                    "status": row[5],
-                    "provider_message_id": row[6],
-                    "error_message": row[7],
-                    "created_at": str(row[8]) if row[8] else None,
-                    "sent_at": str(row[9]) if row[9] else None,
-                }
-                for row in cursor.fetchall()
-            ]
-
-        return jsonify(messages)
-    except RuntimeError as error:
-        return error_response(str(error), 500)
-    except Exception:
-        app.logger.exception("Failed to fetch SMS history")
-        return error_response("Failed to fetch SMS history", 500)
 
 
 @app.route("/reminders", methods=["POST"])
@@ -1783,10 +1531,9 @@ def delete_client(client_id):
             cursor = conn.cursor()
             ensure_clients_table(cursor)
             ensure_reminders_table(cursor)
-            ensure_sms_messages_table(cursor)
+            ensure_admin_notes_table(cursor)
             cursor.execute("DELETE FROM reminders WHERE client_id = %s", (client_id,))
             cursor.execute("DELETE FROM admin_notes WHERE client_id = %s", (client_id,))
-            cursor.execute("DELETE FROM sms_messages WHERE client_id = %s", (client_id,))
             cursor.execute("DELETE FROM clients WHERE id = %s", (client_id,))
             deleted_count = cursor.rowcount
             conn.commit()

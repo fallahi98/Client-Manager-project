@@ -7,8 +7,6 @@ $env:DB_NAME="client_manager"
 $env:DB_USER="postgres"
 $env:DB_PASSWORD="your-database-password"
 
-$env:SMS_GATEWAY_DOMAIN="vtext.com"
-
 $env:ADMIN_EMAIL="you@example.com"
 $env:SMTP_HOST="smtp.gmail.com"
 $env:SMTP_PORT="587"

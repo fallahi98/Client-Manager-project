@@ -35,9 +35,6 @@ After Render creates the web service, open the web service settings and add thes
 ADMIN_EMAIL=your-admin-email@example.com
 SMTP_FROM_EMAIL=your-email@example.com
 BREVO_API_KEY=your-brevo-api-key
-TWILIO_ACCOUNT_SID=your-twilio-account-sid
-TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_FROM_PHONE=+15551234567
 ```
 
 Render can time out when using direct Gmail SMTP. For Render, use Brevo's HTTPS email API instead:
@@ -48,8 +45,6 @@ Render can time out when using direct Gmail SMTP. For Render, use Brevo's HTTPS 
 4. Make sure `SMTP_FROM_EMAIL` is an email sender that Brevo allows.
 
 Brevo API documentation: https://developers.brevo.com/reference/send-transac-email
-
-For reliable SMS, use Twilio. `TWILIO_FROM_PHONE` must be the phone number you buy or receive from Twilio.
 
 ## Optional Local Gmail SMTP Settings
 
@@ -63,16 +58,6 @@ SMTP_PASSWORD=your-gmail-app-password
 SMTP_FROM_EMAIL=your-email@example.com
 SMTP_USE_TLS=false
 ```
-
-## Optional SMS Setting
-
-The default SMS gateway is Verizon:
-
-```text
-SMS_GATEWAY_DOMAIN=vtext.com
-```
-
-Only Verizon numbers use `vtext.com`. Other carriers need their own email-to-SMS gateway domain.
 
 ## Public URL
 

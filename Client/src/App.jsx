@@ -37,9 +37,6 @@ function App() {
   const [emailSendAt, setEmailSendAt] = useState("");
   const [showScheduleEmailConfirm, setShowScheduleEmailConfirm] = useState(false);
   const [showEmailHistoryWindow, setShowEmailHistoryWindow] = useState(false);
-  const [smsHistory, setSmsHistory] = useState([]);
-  const [showSmsConfirm, setShowSmsConfirm] = useState(false);
-  const [showSmsHistoryWindow, setShowSmsHistoryWindow] = useState(false);
   const [reminderAt, setReminderAt] = useState("");
   const [reminderMessage, setReminderMessage] = useState("");
   const [showReminderWindow, setShowReminderWindow] = useState(false);
@@ -89,9 +86,6 @@ function App() {
     setEmailSendAt("");
     setShowScheduleEmailConfirm(false);
     setShowEmailHistoryWindow(false);
-    setSmsHistory([]);
-    setShowSmsConfirm(false);
-    setShowSmsHistoryWindow(false);
     await loadClients();
   };
 
@@ -132,9 +126,6 @@ function App() {
     setEmailSendAt("");
     setShowScheduleEmailConfirm(false);
     setShowEmailHistoryWindow(false);
-    setSmsHistory([]);
-    setShowSmsConfirm(false);
-    setShowSmsHistoryWindow(false);
     setReminderAt("");
     setReminderMessage("");
     setShowReminderWindow(false);
@@ -488,9 +479,6 @@ function App() {
     setEmailSendAt("");
     setShowScheduleEmailConfirm(false);
     setShowEmailHistoryWindow(false);
-    setSmsHistory([]);
-    setShowSmsConfirm(false);
-    setShowSmsHistoryWindow(false);
     setMessage("");
     await loadCases(client.id);
   };
@@ -630,93 +618,6 @@ function App() {
       setShowEmailHistoryWindow(true);
     } catch (error) {
       setMessage(error.response?.data?.error || "Could not load email history");
-    }
-  };
-
-  const requestSendSms = () => {
-    setMessage("");
-
-    if (!selectedClient) {
-      setMessage("Select a client first");
-      return;
-    }
-
-    if (!selectedCase) {
-      setMessage("Select a case first");
-      return;
-    }
-
-    if (!selectedClient.phone_number) {
-      setMessage("Selected client does not have a phone number");
-      return;
-    }
-
-    if (!enoteText.trim()) {
-      setMessage("Write an SMS message first");
-      return;
-    }
-
-    setShowSmsConfirm(true);
-  };
-
-  const sendSms = async () => {
-    setMessage("");
-
-    if (!selectedCase) {
-      setMessage("Select a case first");
-      setShowSmsConfirm(false);
-      return;
-    }
-
-    if (!selectedClient?.phone_number) {
-      setShowSmsConfirm(false);
-      setMessage("Selected client does not have a phone number");
-      return;
-    }
-
-    const digits = String(selectedClient.phone_number || "").replace(/\D/g, "");
-    const e164Number = digits.length === 10 ? `+1${digits}` : digits.startsWith("1") ? `+${digits}` : selectedClient.phone_number;
-    const smsMessage = enoteText.trim();
-    const smsUrl = `sms:${encodeURIComponent(e164Number)}?&body=${encodeURIComponent(smsMessage)}`;
-
-    try {
-      window.location.href = smsUrl;
-      setSmsHistory((currentHistory) => [
-        {
-          id: `sms-app-${Date.now()}`,
-          status: "Prepared",
-          phone_number: e164Number,
-          message: smsMessage,
-          provider_message_id: `sms-app:${e164Number}`,
-          created_at: new Date().toISOString(),
-          sent_at: null,
-          error_message: null,
-        },
-        ...currentHistory,
-      ]);
-      setEnoteText("");
-      setShowSmsConfirm(false);
-      setMessage("SMS app opened. Press send in your messaging app.");
-    } catch (error) {
-      setShowSmsConfirm(false);
-      setMessage("Could not open SMS app on this device");
-    }
-  };
-
-  const openSmsHistoryWindow = async () => {
-    setMessage("");
-
-    if (!selectedCase) {
-      setMessage("Select a case to display SMS history");
-      return;
-    }
-
-    try {
-      const res = await axios.get(`${API_URL}/cases/${selectedCase.id}/sms-history`);
-      setSmsHistory(res.data);
-      setShowSmsHistoryWindow(true);
-    } catch (error) {
-      setMessage(error.response?.data?.error || "Could not load SMS history");
     }
   };
 
@@ -1309,17 +1210,11 @@ function App() {
               <button type="button" onClick={requestScheduleEmail} disabled={!selectedCase}>
                 Schedule Email
               </button>
-              <button type="button" onClick={requestSendSms} disabled={!selectedCase}>
-                Send SMS
-              </button>
               <button className="secondary-button" type="button" onClick={openEnoteHistoryWindow} disabled={!selectedCase}>
                 Display E Notes History
               </button>
               <button className="secondary-button" type="button" onClick={openEmailHistoryWindow} disabled={!selectedCase}>
                 Display Email History
-              </button>
-              <button className="secondary-button" type="button" onClick={openSmsHistoryWindow} disabled={!selectedCase}>
-                Display SMS History
               </button>
             </div>
 
@@ -1361,9 +1256,6 @@ function App() {
                           setSelectedCaseId(String(customerCase.id));
                           setEnoteText("");
                           setEmailSendAt("");
-                          setSmsHistory([]);
-                          setShowSmsConfirm(false);
-                          setShowSmsHistoryWindow(false);
                         }}
                       >
                         {customerCase.title || `Case #${customerCase.id}`}
@@ -1422,25 +1314,6 @@ function App() {
                       setShowScheduleEmailConfirm(false);
                       setEmailSendAt("");
                     }}>
-                      Cancel
-                    </button>
-                  </footer>
-                </div>
-              </div>
-            )}
-
-            {showSmsConfirm && selectedCase && (
-              <div className="confirm-overlay" aria-label="Confirm SMS">
-                <div className="confirm-window">
-                  <h3>Send SMS?</h3>
-                  <p>
-                    Send this SMS to {selectedClient?.phone_number || "the selected client"}?
-                  </p>
-                  <footer className="form-actions">
-                    <button type="button" onClick={sendSms}>
-                      Send
-                    </button>
-                    <button className="secondary-button" type="button" onClick={() => setShowSmsConfirm(false)}>
                       Cancel
                     </button>
                   </footer>
@@ -1507,40 +1380,6 @@ function App() {
               </div>
             )}
 
-            {showSmsHistoryWindow && selectedCase && (
-              <div className="confirm-overlay" aria-label="SMS history">
-                <div className="case-entry-window">
-                  <header className="form-titlebar">
-                    <h3>{selectedCase.title || `Case #${selectedCase.id}`}</h3>
-                    <p>SMS history</p>
-                  </header>
-
-                  <div className="history-field email-history-list">
-                    {smsHistory.length === 0 ? (
-                      <p className="empty-state">No SMS history for this case.</p>
-                    ) : (
-                      smsHistory.map((smsItem) => (
-                        <article className="email-history-item" key={smsItem.id}>
-                          <h4>{smsItem.status}</h4>
-                          <p>To: {smsItem.phone_number}</p>
-                          <p>Created: {smsItem.created_at || "Not recorded"}</p>
-                          {smsItem.sent_at && <p>Sent: {smsItem.sent_at}</p>}
-                          {smsItem.provider_message_id && <p>Provider ID: {smsItem.provider_message_id}</p>}
-                          {smsItem.error_message && <p>Error: {smsItem.error_message}</p>}
-                          <textarea readOnly value={smsItem.message || ""} />
-                        </article>
-                      ))
-                    )}
-                  </div>
-
-                  <footer className="form-actions">
-                    <button className="secondary-button" type="button" onClick={() => setShowSmsHistoryWindow(false)}>
-                      Back
-                    </button>
-                  </footer>
-                </div>
-              </div>
-            )}
           </div>
         </section>
       )}

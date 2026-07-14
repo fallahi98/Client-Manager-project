@@ -46,7 +46,26 @@ DB_USER=your-postgres-username
 DB_PASSWORD=your-postgres-password
 ```
 
-## 5. Set Up Email
+## 5. Set Up Login
+
+Generate a password hash in the PythonAnywhere Bash console:
+
+```bash
+source venv/bin/activate
+python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('your-login-password'))"
+```
+
+In `Server/pythonanywhere.env`, set:
+
+```text
+SECRET_KEY=use-a-long-random-secret
+APP_USERNAME=admin
+APP_PASSWORD_HASH=the-generated-password-hash
+```
+
+Use the printed hash as `APP_PASSWORD_HASH`. Do not put the real login password in the env file.
+
+## 6. Set Up Email
 
 In the same `Server/pythonanywhere.env` file, set:
 
@@ -62,7 +81,7 @@ SMTP_USE_TLS=true
 
 `SMTP_PASSWORD` must be a Gmail app password, not your normal Gmail password.
 
-## 6. Configure the Web App
+## 7. Configure the Web App
 
 In PythonAnywhere, open the **Web** tab.
 
@@ -97,7 +116,7 @@ Important: change this line to your real PythonAnywhere username:
 PROJECT_DIR = Path(os.getenv("CLIENT_MANAGER_PROJECT_DIR", "/home/yourusername/Client-Manager-project"))
 ```
 
-## 7. Static Files
+## 8. Static Files
 
 The React build is included in:
 
@@ -107,7 +126,7 @@ Client/dist
 
 Flask serves those files automatically, so you do not need a separate static file mapping for the first deployment.
 
-## 8. Reload
+## 9. Reload
 
 Go back to the **Web** tab and click:
 
@@ -121,6 +140,6 @@ Then open:
 https://yourusername.pythonanywhere.com
 ```
 
-## 9. Test Email
+## 10. Test Email
 
 Add a client or schedule an email from a case. If email is configured correctly, the administrator email address receives the message.

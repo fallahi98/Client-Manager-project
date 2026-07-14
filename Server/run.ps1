@@ -33,6 +33,8 @@ if (Test-Path $credentialsPath) {
 $env:DB_HOST = if ($env:DB_HOST) { $env:DB_HOST } elseif ($env:DB_SERVER) { $env:DB_SERVER } else { "localhost" }
 $env:DB_PORT = if ($env:DB_PORT) { $env:DB_PORT } else { "5432" }
 $env:DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "client_manager" }
+$env:SECRET_KEY = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { "local-development-secret-change-me" }
+$env:APP_USERNAME = if ($env:APP_USERNAME) { $env:APP_USERNAME } else { "admin" }
 $env:ADMIN_EMAIL = if ($env:ADMIN_EMAIL) { $env:ADMIN_EMAIL } else { "fallahi98@gmail.com" }
 $env:SMTP_HOST = if ($env:SMTP_HOST) { $env:SMTP_HOST } else { "smtp.gmail.com" }
 $env:SMTP_PORT = if ($env:SMTP_PORT) { $env:SMTP_PORT } else { "587" }
@@ -45,6 +47,9 @@ Write-Host ""
 
 Read-RequiredValue -Name "DB_USER" -Prompt "Database username"
 Read-RequiredValue -Name "DB_PASSWORD" -Prompt "Database password" -Secret
+if (-not $env:APP_PASSWORD_HASH) {
+    Read-RequiredValue -Name "APP_PASSWORD" -Prompt "Client Manager login password" -Secret
+}
 Read-RequiredValue -Name "SMTP_USERNAME" -Prompt "SMTP username"
 Read-RequiredValue -Name "SMTP_PASSWORD" -Prompt "SMTP password" -Secret
 

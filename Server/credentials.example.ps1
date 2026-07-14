@@ -7,6 +7,10 @@ $env:DB_NAME="client_manager"
 $env:DB_USER="postgres"
 $env:DB_PASSWORD="your-database-password"
 
+$env:SECRET_KEY="replace-with-a-long-random-secret"
+$env:APP_USERNAME="admin"
+$env:APP_PASSWORD_HASH="replace-with-generated-password-hash"
+
 $env:ADMIN_EMAIL="you@example.com"
 $env:SMTP_HOST="smtp.gmail.com"
 $env:SMTP_PORT="587"

@@ -10,6 +10,12 @@ services:
         fromDatabase:
           name: client-manager-db
           property: connectionString
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_USERNAME
+        value: admin
+      - key: APP_PASSWORD_HASH
+        sync: false
       - key: BREVO_SENDER_NAME
         value: Client Manager
       - key: SMTP_HOST

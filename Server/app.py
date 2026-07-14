@@ -8,11 +8,12 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 import psycopg2
 import requests
 from psycopg2 import OperationalError
+from werkzeug.security import check_password_hash
 
 
 CLIENT_DIST_DIR = Path(__file__).resolve().parent.parent / "Client" / "dist"
@@ -40,8 +41,27 @@ def load_env_file(path):
 load_env_file(SERVER_DIR / "pythonanywhere.env")
 
 app = Flask(__name__, static_folder=str(CLIENT_DIST_DIR), static_url_path="")
-CORS(app, origins=os.getenv("CORS_ORIGINS", "*").split(","))
+app.secret_key = os.getenv("SECRET_KEY") or os.urandom(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+)
+CORS(app, origins=os.getenv("CORS_ORIGINS", "*").split(","), supports_credentials=True)
 note_scheduler_started = False
+
+
+PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/auth/login",
+    "/auth/logout",
+    "/auth/session",
+    "/favicon.svg",
+}
+PUBLIC_PREFIXES = ("/assets/",)
+PUBLIC_EXTENSIONS = (".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".map")
+AUTH_SESSION_KEY = "client_manager_authenticated"
 
 
 def get_db():
@@ -239,6 +259,55 @@ def ensure_reminders_table(cursor):
 
 def error_response(message, status_code=500):
     return jsonify({"error": message}), status_code
+
+
+def authentication_is_configured():
+    return bool(os.getenv("APP_PASSWORD_HASH") or os.getenv("APP_PASSWORD"))
+
+
+def valid_login(username, password):
+    expected_username = os.getenv("APP_USERNAME", "admin")
+    password_hash = os.getenv("APP_PASSWORD_HASH", "")
+    plain_password = os.getenv("APP_PASSWORD", "")
+
+    if username != expected_username:
+        return False
+
+    if password_hash:
+        return check_password_hash(password_hash, password)
+
+    if plain_password:
+        app.logger.warning("APP_PASSWORD is configured in plain text. Use APP_PASSWORD_HASH for deployment.")
+        return password == plain_password
+
+    return False
+
+
+def path_is_public(path):
+    if path in PUBLIC_PATHS:
+        return True
+
+    if any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
+        return True
+
+    if request.method == "GET" and path.lower().endswith(PUBLIC_EXTENSIONS):
+        return True
+
+    return False
+
+
+@app.before_request
+def require_login_for_private_routes():
+    if request.method == "OPTIONS":
+        return None
+
+    if path_is_public(request.path):
+        return None
+
+    if session.get(AUTH_SESSION_KEY):
+        return None
+
+    return error_response("Authentication required", 401)
 
 
 def open_smtp_connection(host, port, timeout=30):
@@ -675,6 +744,48 @@ def backend_health_check():
             "database_driver": "psycopg2",
         }
     )
+
+
+@app.route("/auth/session", methods=["GET"])
+def get_auth_session():
+    return jsonify(
+        {
+            "authenticated": bool(session.get(AUTH_SESSION_KEY)),
+            "username": session.get("username"),
+            "auth_configured": authentication_is_configured(),
+        }
+    )
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    if not authentication_is_configured():
+        return error_response(
+            "Authentication is not configured. Set APP_USERNAME and APP_PASSWORD_HASH.",
+            500,
+        )
+
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+
+    if not username or not password:
+        return error_response("Username and password are required", 400)
+
+    if not valid_login(username, password):
+        return error_response("Invalid username or password", 401)
+
+    session.clear()
+    session[AUTH_SESSION_KEY] = True
+    session["username"] = username
+
+    return jsonify({"message": "Login successful", "username": username})
+
+
+@app.route("/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"message": "Logged out"})
 
 
 @app.route("/diagnostics/config", methods=["GET"])

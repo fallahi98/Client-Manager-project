@@ -21,6 +21,37 @@
   padding: 28px;
 }
 
+.auth-window {
+  max-width: 460px;
+}
+
+.main-titlebar,
+.session-actions {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.session-actions {
+  align-items: center;
+  color: #5d6878;
+  font-size: 0.92rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.login-form label {
+  color: #253246;
+  display: grid;
+  font-weight: 700;
+  gap: 7px;
+}
+
 h1,
 h2,
 h3,
@@ -576,6 +607,8 @@ textarea {
   }
 
   .window-titlebar,
+  .main-titlebar,
+  .session-actions,
   .window-toolbar,
   .enotes-toolbar,
   .form-actions {

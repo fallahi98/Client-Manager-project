@@ -32,10 +32,21 @@ then Render is trying to run npm from the repository root. The repository now in
 After Render creates the web service, open the web service settings and add these environment variables:
 
 ```text
+SECRET_KEY=use-a-long-random-secret
+APP_USERNAME=admin
+APP_PASSWORD_HASH=your-generated-password-hash
 ADMIN_EMAIL=your-admin-email@example.com
 SMTP_FROM_EMAIL=your-email@example.com
 BREVO_API_KEY=your-brevo-api-key
 ```
+
+Generate `APP_PASSWORD_HASH` before adding it to Render:
+
+```bash
+python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('your-login-password'))"
+```
+
+Use the printed value as `APP_PASSWORD_HASH`. Do not put the real password itself in Render.
 
 Render can time out when using direct Gmail SMTP. For Render, use Brevo's HTTPS email API instead:
 

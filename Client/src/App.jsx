@@ -3,6 +3,8 @@ import axios from "axios";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:5000" : "");
+axios.defaults.withCredentials = true;
+
 const emptyClientForm = {
   first_name: "",
   last_name: "",
@@ -14,6 +16,11 @@ const emptyClientForm = {
 };
 
 function App() {
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [loginMessage, setLoginMessage] = useState("");
+  const [currentUsername, setCurrentUsername] = useState("");
   const [clients, setClients] = useState([]);
   const [activeTask, setActiveTask] = useState(null);
   const [clientFormMode, setClientFormMode] = useState(null);
@@ -47,9 +54,68 @@ function App() {
 
   const selectedCase = cases.find((customerCase) => String(customerCase.id) === selectedCaseId);
 
+  const handleAuthError = (error) => {
+    if (error.response?.status !== 401) {
+      return false;
+    }
+
+    setIsAuthenticated(false);
+    setCurrentUsername("");
+    setLoginMessage("Please log in to continue.");
+    setActiveTask(null);
+    return true;
+  };
+
   const loadClients = async () => {
-    const res = await axios.get(`${API_URL}/clients`);
-    setClients(res.data);
+    try {
+      const res = await axios.get(`${API_URL}/clients`);
+      setClients(res.data);
+    } catch (error) {
+      if (!handleAuthError(error)) {
+        throw error;
+      }
+    }
+  };
+
+  const updateLoginForm = (field, value) => {
+    setLoginForm((currentForm) => ({ ...currentForm, [field]: value }));
+  };
+
+  const login = async (event) => {
+    event.preventDefault();
+    setLoginMessage("");
+
+    if (!loginForm.username.trim() || !loginForm.password) {
+      setLoginMessage("Enter your username and password.");
+      return;
+    }
+
+    try {
+      const res = await axios.post(`${API_URL}/auth/login`, {
+        username: loginForm.username.trim(),
+        password: loginForm.password,
+      });
+      setIsAuthenticated(true);
+      setCurrentUsername(res.data.username || loginForm.username.trim());
+      setLoginForm((currentForm) => ({ ...currentForm, password: "" }));
+      setMessage("");
+      await loadClients();
+    } catch (error) {
+      setLoginMessage(error.response?.data?.error || "Could not log in. Make sure the server is running.");
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await axios.post(`${API_URL}/auth/logout`);
+    } catch {
+      // Local state is cleared even if the server session already expired.
+    }
+
+    setIsAuthenticated(false);
+    setCurrentUsername("");
+    setLoginForm((currentForm) => ({ ...currentForm, password: "" }));
+    closeClientTask();
   };
 
   const openClientTask = async () => {
@@ -744,34 +810,113 @@ function App() {
   useEffect(() => {
     let ignore = false;
 
-    const loadInitialClients = async () => {
+    const loadInitialSession = async () => {
       try {
-        const res = await axios.get(`${API_URL}/clients`);
-        if (!ignore) {
-          setClients(res.data);
+        const sessionRes = await axios.get(`${API_URL}/auth/session`);
+
+        if (ignore) {
+          return;
         }
-      } catch {
+
+        if (sessionRes.data.authenticated) {
+          setIsAuthenticated(true);
+          setCurrentUsername(sessionRes.data.username || "");
+          await loadClients();
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
         if (!ignore) {
-          setMessage("Could not load clients. Make sure the server is running.");
+          setLoginMessage(error.response?.data?.error || "Could not reach the server.");
+        }
+      } finally {
+        if (!ignore) {
+          setAuthLoading(false);
         }
       }
     };
 
-    loadInitialClients();
+    loadInitialSession();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setDueReminders([]);
+      return undefined;
+    }
+
     loadDueReminders();
     const reminderInterval = window.setInterval(loadDueReminders, 30000);
 
     return () => {
-      ignore = true;
       window.clearInterval(reminderInterval);
     };
-  }, []);
+  }, [isAuthenticated]);
+
+  if (authLoading) {
+    return (
+      <main className="app-shell">
+        <section className="main-window auth-window">
+          <h1>Client Manager</h1>
+          <p className="subtitle">Checking secure session...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="app-shell">
+        <section className="main-window auth-window">
+          <h1>Client Manager</h1>
+          <p className="subtitle">Sign in to access customer information.</p>
+
+          {loginMessage && <p className="message">{loginMessage}</p>}
+
+          <form className="login-form" onSubmit={login}>
+            <label>
+              Username
+              <input
+                autoComplete="username"
+                value={loginForm.username}
+                onChange={(event) => updateLoginForm("username", event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                autoComplete="current-password"
+                type="password"
+                value={loginForm.password}
+                onChange={(event) => updateLoginForm("password", event.target.value)}
+              />
+            </label>
+            <button type="submit">Log In</button>
+          </form>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
       <section className="main-window">
-        <h1>Client Manager</h1>
-        <p className="subtitle">Select a task to begin.</p>
+        <div className="main-titlebar">
+          <div>
+            <h1>Client Manager</h1>
+            <p className="subtitle">Select a task to begin.</p>
+          </div>
+          <div className="session-actions">
+            {currentUsername && <span>Signed in as {currentUsername}</span>}
+            <button className="secondary-button" type="button" onClick={logout}>
+              Log Out
+            </button>
+          </div>
+        </div>
 
         {message && <p className="message">{message}</p>}
 

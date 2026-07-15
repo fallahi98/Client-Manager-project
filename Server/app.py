@@ -36,7 +36,7 @@ def load_env_file(path):
         repeated_prefix = f"{key}="
         if value.startswith(repeated_prefix):
             value = value[len(repeated_prefix):]
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 load_env_file(SERVER_DIR / "pythonanywhere.env")
@@ -267,8 +267,8 @@ def authentication_is_configured():
 
 
 def valid_login(username, password):
-    expected_username = os.getenv("APP_USERNAME", "admin")
-    password_hash = os.getenv("APP_PASSWORD_HASH", "")
+    expected_username = os.getenv("APP_USERNAME", "admin").strip()
+    password_hash = os.getenv("APP_PASSWORD_HASH", "").strip()
     plain_password = os.getenv("APP_PASSWORD", "")
 
     if username != expected_username:

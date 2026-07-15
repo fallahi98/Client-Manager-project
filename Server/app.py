@@ -13,6 +13,7 @@ from flask_cors import CORS
 import psycopg2
 import requests
 from psycopg2 import OperationalError
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash
 
 
@@ -713,6 +714,14 @@ def start_note_scheduler():
 @app.errorhandler(RuntimeError)
 def handle_runtime_error(error):
     return error_response(str(error), 500)
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(error):
+    if request.path.startswith("/api/") or request.path.startswith("/auth/"):
+        return error_response(error.description, error.code)
+
+    return error
 
 
 @app.errorhandler(Exception)
